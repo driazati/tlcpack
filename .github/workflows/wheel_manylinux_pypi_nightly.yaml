@@ -13,43 +13,65 @@ on:
     - cron: '0 5 * * *' # 5 AM UTC
 
 jobs:
-  Build:
-    strategy:
-      matrix:
-        pkg: ['pypi-nightly']
-        # matrix of build configs
-        config:
-          - cuda: 'none'
-            image: 'tlcpack/package-cpu:v0.4'
-            package_name: 'apache-tvm'
+  # Build:
+  #   strategy:
+  #     matrix:
+  #       pkg: ['pypi-nightly']
+  #       # matrix of build configs
+  #       config:
+  #         - cuda: 'none'
+  #           image: 'tlcpack/package-cpu:v0.4'
+  #           package_name: 'apache-tvm'
 
+  #   runs-on: ubuntu-latest
+
+  #   steps:
+  #   - uses: actions/checkout@v2
+  #   - name: Clone TVM
+  #     run: |
+  #       git clone https://github.com/apache/tvm tvm --recursive
+  #   - name: Sync Package
+  #     run: |
+  #       python3 common/sync_package.py \
+  #         --cuda ${{ matrix.config.cuda }} \
+  #         --package-name ${{ matrix.config.package_name }} \
+  #         --use-public-version \
+  #         ${{ matrix.pkg }}
+  #   - name: Build
+  #     env:
+  #       IMAGE: ${{ matrix.config.image }}
+  #       CUDA: ${{ matrix.config.cuda }}
+  #     run: |
+  #       docker/bash.sh --no-gpu $IMAGE ./wheel/build_wheel_manylinux.sh --cuda $CUDA
+  #   - name: Wheel-Deploy-Pypi
+  #     if: github.ref == 'refs/heads/main'
+  #     env:
+  #       TWINE_NON_INTERACTIVE: 1
+  #       TWINE_REPOSITORY: pypi
+  #       TWINE_USERNAME: __token__
+  #       TWINE_PASSWORD: ${{ secrets.PYPI_API_KEY }}
+  #     run: |
+  #       python3 -m pip install twine
+  #       twine upload tvm/python/repaired_wheels/*
+  Test:
+    # depends-on: Build
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v2
-    - name: TVM checkout
+    - name: Clone TVM
       run: |
+        set -eux
         git clone https://github.com/apache/tvm tvm --recursive
-    - name: Sync Package
+    - name: Run Unit Tests
       run: |
-        python3 common/sync_package.py \
-          --cuda ${{ matrix.config.cuda }} \
-          --package-name ${{ matrix.config.package_name }} \
-          --use-public-version \
-          ${{ matrix.pkg }}
-    - name: Build
-      env:
-        IMAGE: ${{ matrix.config.image }}
-        CUDA: ${{ matrix.config.cuda }}
-      run: |
-        docker/bash.sh --no-gpu $IMAGE ./wheel/build_wheel_manylinux.sh --cuda $CUDA
-    - name: Wheel-Deploy-Pypi
-      if: github.ref == 'refs/heads/main'
-      env:
-        TWINE_NON_INTERACTIVE: 1
-        TWINE_REPOSITORY: pypi
-        TWINE_USERNAME: __token__
-        TWINE_PASSWORD: ${{ secrets.PYPI_API_KEY }}
-      run: |
-        python3 -m pip install twine
-        twine upload tvm/python/repaired_wheels/*
+        set -eux
+        pip install pytest
+        pip install --upgrade --pre apache-tvm
+        pip list | grep tvm
+        python -c 'import tvm; print(dir(tvm))'
+        cd tvm
+        # Breaks Pytest since it relies on tvm/python being in the PYTHONPATH
+        rm tests/python/unittest/test_gen_requirements.py
+        pytest tests/python/unittest
+
+
